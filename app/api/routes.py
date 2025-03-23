@@ -1,9 +1,14 @@
+from pathlib import Path
+from dotenv import load_dotenv
 from flask import Blueprint, request, jsonify
 from app.slack import send_message
 from app.database.db import db, Message
 import logging
 import json
-from datetime import datetime
+
+env_path = Path(".") / ".env"
+load_dotenv(dotenv_path=env_path)
+
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
@@ -20,7 +25,7 @@ def send_message_endpoint():
 
     Expected JSON payload:
     {
-        "user_id": "U123456", 
+        "user_id": "U08J1P3FBRD", 
         "text": "Hello from the API!",
         "channel_id": "C123456" (optional)
     }
@@ -45,7 +50,7 @@ def send_message_endpoint():
     )
 
     if result:
-        return jsonify({"success": True, "message": result}), 200
+        return jsonify({"success": True, "message": "Message sent successfully"}), 200
     else:
         return jsonify({"success": False, "error": "Failed to send message"}), 500
 
@@ -60,9 +65,11 @@ def get_messages():
     - channel_id: Filter by channel ID
     - limit: Maximum number of results to return (default 100)
     - offset: Offset for pagination (default 0)
+    - direction: Filter by message direction (incoming/outgoing)
     """
     user_id = request.args.get('user_id')
     channel_id = request.args.get('channel_id')
+    direction = request.args.get('direction')
     limit = request.args.get('limit', 100, type=int)
     offset = request.args.get('offset', 0, type=int)
 
@@ -75,6 +82,11 @@ def get_messages():
     if channel_id:
         query = query.filter(Message.channel_id == channel_id)
 
+    if direction:
+        query = query.filter(
+            Message.message_metadata.contains({"direction": direction})
+        )
+
     # Get results with pagination
     messages = query.order_by(Message.timestamp.desc()).limit(
         limit).offset(offset).all()
@@ -85,50 +97,7 @@ def get_messages():
     return jsonify({"count": len(result), "messages": result}), 200
 
 
-@api_bp.route('/slack/events', methods=['POST'])
-def slack_events():
-    """
-    Endpoint for Slack Events API to receive events like messages
-    """
-    data = request.json
-    logger.info(f"Received Slack event: {json.dumps(data)[:100]}...")
-
-    # Handle Slack URL verification challenge
-    if data and data.get('type') == 'url_verification':
-        return jsonify({"challenge": data.get('challenge')}), 200
-
-    # Handle message events
-    if data and data.get('event', {}).get('type') == 'message':
-        event = data.get('event', {})
-
-        # Skip bot messages to avoid duplicate storage
-        if event.get('bot_id'):
-            return jsonify({"success": True, "info": "Skipped bot message"}), 200
-
-        # Get message details
-        channel_id = event.get('channel')
-        user_id = event.get('user')
-        text = event.get('text')
-        ts = event.get('ts')
-
-        if channel_id and user_id and text:
-            # Store the incoming message
-            message = Message(
-                user_id=user_id,
-                channel_id=channel_id,
-                message_text=text,
-                message_metadata={
-                    "slack_ts": ts,
-                    "event_id": data.get('event_id'),
-                    "team_id": data.get('team_id'),
-                    "direction": "incoming"  # Mark as an incoming message
-                }
-            )
-
-            db.session.add(message)
-            db.session.commit()
-
-            logger.info(
-                f"Stored incoming message from {user_id} in channel {channel_id}")
-
-    return jsonify({"success": True}), 200
+@api_bp.route('/test', methods=['GET'])
+def test_endpoint():
+    """Simple test endpoint to verify the API is working"""
+    return jsonify({"status": "ok", "message": "API is working"}), 200

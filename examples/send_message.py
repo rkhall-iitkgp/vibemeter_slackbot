@@ -1,26 +1,63 @@
 #!/usr/bin/env python
 """
-Example script to demonstrate sending a message via the Slack bot API.
+Example script to send messages to Slack using slackclient
 """
+import os
+import sys
+import argparse
 import requests
 import json
-import argparse
+from slack import WebClient
+from slack.errors import SlackApiError
+from dotenv import load_dotenv
+
+# Load environment variables from .env file
+load_dotenv()
 
 
-def send_message(api_url, user_id, text, channel_id=None):
-    """
-    Send a message to a Slack user or channel using the API
+def send_direct_message(user_id, text):
+    """Send a direct message to a user using slackclient"""
+    client = WebClient(token=os.environ.get("SLACK_BOT_TOKEN"))
 
-    Args:
-        api_url (str): Base URL of the API (e.g., http://localhost:5000)
-        user_id (str): Slack user ID to send the message to
-        text (str): Message text
-        channel_id (str, optional): Channel ID to send to instead of direct message
+    try:
+        # Open a direct message channel
+        response = client.conversations_open(users=user_id)
+        channel_id = response['channel']['id']
 
-    Returns:
-        dict: API response
-    """
-    # Build the request payload
+        # Send message
+        result = client.chat_postMessage(
+            channel=channel_id,
+            text=text
+        )
+        print(f"Message sent to user {user_id} via DM")
+        return result
+    except SlackApiError as e:
+        print(f"Error sending message: {e.response['error']}")
+        return None
+
+
+def send_channel_message(channel_id, text):
+    """Send a message to a channel using slackclient"""
+    client = WebClient(token=os.environ.get("SLACK_BOT_TOKEN"))
+
+    try:
+        # Send message
+        result = client.chat_postMessage(
+            channel=channel_id,
+            text=text
+        )
+        print(f"Message sent to channel {channel_id}")
+        return result
+    except SlackApiError as e:
+        print(f"Error sending message: {e.response['error']}")
+        return None
+
+
+def send_via_api(user_id, text, channel_id=None):
+    """Send a message using the app's API endpoint"""
+    api_url = os.environ.get(
+        "API_URL", "http://localhost:5000/api/send-message")
+
     payload = {
         "user_id": user_id,
         "text": text
@@ -29,41 +66,47 @@ def send_message(api_url, user_id, text, channel_id=None):
     if channel_id:
         payload["channel_id"] = channel_id
 
-    # Make the API request
-    response = requests.post(
-        f"{api_url}/api/send-message",
-        json=payload,
-        headers={"Content-Type": "application/json"}
-    )
+    try:
+        response = requests.post(api_url, json=payload)
+        response.raise_for_status()
+        result = response.json()
 
-    # Parse the response
-    result = response.json()
+        if result.get("success"):
+            print(f"Message successfully sent via API")
+        else:
+            print(f"Error sending message via API: {result.get('error')}")
 
-    if response.status_code == 200 and result.get("success"):
-        print(f"✅ Message sent successfully!")
-        print(f"Message ID: {result['message']['id']}")
-        print(
-            f"Recipient: {'Channel' if channel_id else 'User'} {result['message']['channel_id']}")
-    else:
-        print(
-            f"❌ Failed to send message: {result.get('error', 'Unknown error')}")
-
-    return result
+        return result
+    except requests.exceptions.RequestException as e:
+        print(f"Request error: {e}")
+        return None
 
 
-if __name__ == "__main__":
-    # Parse command line arguments
-    parser = argparse.ArgumentParser(
-        description="Send a message via the Slack bot API")
-    parser.add_argument(
-        "--api", default="http://localhost:5000", help="API base URL")
-    parser.add_argument("--user", required=True,
-                        help="Slack user ID to message")
-    parser.add_argument(
-        "--channel", help="Optional channel ID (if omitted, sends a direct message)")
+def main():
+    parser = argparse.ArgumentParser(description="Send a message to Slack")
+    parser.add_argument("--user", help="User ID to send the message to")
+    parser.add_argument("--channel", help="Channel ID to send the message to")
     parser.add_argument("--text", required=True, help="Message text to send")
+    parser.add_argument("--api", action="store_true",
+                        help="Use the API endpoint instead of direct client")
 
     args = parser.parse_args()
 
-    # Send the message
-    send_message(args.api, args.user, args.text, args.channel)
+    if not args.user and not args.channel:
+        print("Error: You must specify either a user or a channel")
+        parser.print_help()
+        sys.exit(1)
+
+    if args.api:
+        # Send via API
+        send_via_api(args.user, args.text, args.channel)
+    else:
+        # Send via client directly
+        if args.channel:
+            send_channel_message(args.channel, args.text)
+        else:
+            send_direct_message(args.user, args.text)
+
+
+if __name__ == "__main__":
+    main()

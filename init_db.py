@@ -1,41 +1,37 @@
 #!/usr/bin/env python
 """
-Standalone script to initialize the database without running the Flask app.
+Initialize the database for the VibeMeter Slack Bot
 """
 import os
-import sqlite3
-from pathlib import Path
+import logging
+from app import create_app
+from app.database.db import db
+from dotenv import load_dotenv
+
+# Load environment variables
+load_dotenv()
+
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
 
 
-def init_database(db_path='vibemeter.db'):
-    """Initialize the SQLite database with the schema file"""
-    # Get the absolute path to the schema file
-    base_dir = Path(__file__).resolve().parent
-    schema_path = os.path.join(base_dir, 'app', 'database', 'schema.sql')
+def init_db():
+    """Initialize the database by dropping and creating all tables"""
+    app = create_app()
 
-    # Make sure the schema file exists
-    if not os.path.exists(schema_path):
-        print(f"Error: Schema file not found at {schema_path}")
-        return False
+    with app.app_context():
+        logger.info("Dropping all existing tables...")
+        db.drop_all()
 
-    try:
-        # Connect to the database (will create it if it doesn't exist)
-        conn = sqlite3.connect(db_path)
+        logger.info("Creating database tables...")
+        db.create_all()
 
-        # Execute the schema file
-        with open(schema_path) as f:
-            conn.executescript(f.read())
-
-        # Commit changes and close connection
-        conn.commit()
-        conn.close()
-
-        print(f"Database successfully initialized at {db_path}")
-        return True
-    except Exception as e:
-        print(f"Error initializing database: {e}")
-        return False
+        logger.info("Database initialization complete!")
 
 
 if __name__ == "__main__":
-    init_database()
+    init_db()

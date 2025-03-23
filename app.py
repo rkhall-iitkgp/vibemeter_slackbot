@@ -1,46 +1,41 @@
-import os
-import logging
+#!/usr/bin/env python
+"""
+Main entry point for the VibeMeter Slack Bot application
+"""
+
+# Load .env file
+from pathlib import Path
 from dotenv import load_dotenv
 from app import create_app
-import click
-from flask.cli import with_appcontext
-from app.database.db import db
+import logging
+import os
 
-# Set up logging
+env_path = Path(".") / ".env"
+load_dotenv(dotenv_path=env_path)
+
+
+# Configure logging
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger(__name__)
 
-# Load environment variables from .env file
-load_dotenv()
-
+# Create the application
 app = create_app()
 
+if __name__ == "__main__":
+    port = int(os.environ.get("PORT", 5000))
+    logger.info(f"Starting VibeMeter Slack Bot on port {port}")
 
-@click.command('init-db')
-@with_appcontext
-def init_db_command():
-    """Clear the existing data and create new tables."""
-    db.drop_all()
-    db.create_all()
-    click.echo('Initialized the database.')
-
-
-# Add the command to the CLI
-app.cli.add_command(init_db_command)
-
-if __name__ == '__main__':
-    port = int(os.environ.get('PORT', 5000))
-    logger.info(f"Starting Flask server on port {port}")
-    logger.info("Socket Mode will connect automatically on first request")
-
-    if not os.environ.get('SLACK_APP_TOKEN'):
-        logger.warning(
-            "SLACK_APP_TOKEN not found in environment variables. Socket Mode will not work.")
+    # Check for required environment variables
     if not os.environ.get('SLACK_BOT_TOKEN'):
         logger.warning(
-            "SLACK_BOT_TOKEN not found in environment variables. Bot functionality will not work.")
+            "SLACK_BOT_TOKEN not found in environment variables. The bot will not be able to send messages.")
 
-    app.run(host='0.0.0.0', port=port, debug=True)
+    if not os.environ.get('SLACK_SIGNING_SECRET'):
+        logger.warning(
+            "SLACK_SIGNING_SECRET not found in environment variables. The Slack Events API will not work.")
+
+    logger.info("SlackClient and SlackEventsAPI configured and running")
+    app.run(host="0.0.0.0", port=port, debug=True)
